@@ -1,0 +1,236 @@
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: merlion-dev-ec2-vpc
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: us-west-2a
+      CidrBlock: 10.0.1.0/24
+      Tags:
+        - Key: Name
+          Value: merlion-dev-ec2-public-subnet
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: merlion-dev-ec2-public-subnet-route-table
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref Subnet
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: merlion-dev-ec2-igw
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTable
+      GatewayId: !Ref InternetGateway
+      DestinationCidrBlock: 0.0.0.0/0
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for EC2 instance
+      GroupName: merlion-dev-ec2-sg
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: merlion-dev-ec2-sg
+  SecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      CidrIp: 0.0.0.0/0
+      IpProtocol: -1
+  SecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      CidrIp: 0.0.0.0/0
+      IpProtocol: -1
+  Instance:
+    Type: AWS::EC2::Instance
+    UpdateReplacePolicy: Delete
+    Properties:
+      InstanceType: t3.nano
+      ImageId: ami-046d7944dd9e73a61
+      IamInstanceProfile: !Ref InstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 20
+      #        - DeviceName: dev/xvdb
+      #          VirtualName: ephemeral0
+      UserData: !Base64 echo hello world 1
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeleteOnTermination: true
+          DeviceIndex: '0'
+          SubnetId: !Ref Subnet
+          GroupSet:
+            - !Ref SecurityGroup
+      Tags:
+        - Key: Name
+          Value: merlion-dev-ec2
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: merlion-dev-ec2-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: merlion-dev-ec2-role
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: merlion-dev-ec2-instance-profile
+      Roles:
+        - !Ref Role
+  Volume:
+    Type: AWS::EC2::Volume
+    Properties:
+      AvailabilityZone: us-west-2a
+      Size: 10
+      VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: merlion-dev-ec2-add-volume
+  VolumeAttachment:
+    Type: AWS::EC2::VolumeAttachment
+    DependsOn: EC2CreationCustomResource
+    Properties:
+      VolumeId: !Ref Volume
+      InstanceId: !Ref Instance
+      Device: "/dev/xvdh"
+  #The below creates our custom Delete Lambda function
+  EC2CleanupFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: merlion-dev-ec2-terminate-lambda
+      Code: #Lambda code has to be inline so CloudFormation can "import cfnresponse" with its modules, i.e. we don't have to attach a dozen files
+        ZipFile: |
+          import boto3
+          import logging
+          import cfnresponse
+          
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          
+          def lambda_handler(event, context):
+              logger.info("Starting.....%s", event)
+          
+              ec2_client = boto3.client('ec2')
+              
+              if event.get('RequestType') != "Update" or event.get("OldResourceProperties", {}).get("InstanceId") == None:
+                  logger.info("No action is required as the event is not Update or Old InstanceId not available.")
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {"Message": "No action required."})
+                  return
+          
+              try:
+                  tag_key="Name"
+                  tag_value="merlion-dev-ec2"
+                  response = ec2_client.describe_instances(
+                      InstanceIds=[
+                          event.get("OldResourceProperties", {}).get("InstanceId"),
+                      ],
+                      Filters=[
+                      {
+                        'Name': 'tag:' + tag_key,
+                        'Values': [tag_value]
+                      },
+                      {
+                        'Name': 'instance-state-name',
+                        'Values': ['running']
+                      }
+                  ])
+                  instance_ids = []
+                  for reservation in response['Reservations']:
+                      for instance in reservation['Instances']:
+                          instance_ids.append(instance['InstanceId'])
+          
+                  if not instance_ids:
+                      logger.info("No instances found with tag %s:%s",tag_key,tag_value)
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {"Message": "No instances to terminate."})
+                      return
+          
+                  # Terminate the instances
+                  terminate_response = ec2_client.terminate_instances(InstanceIds=instance_ids)
+          
+                  for instance in terminate_response['TerminatingInstances']:
+                      logger.info("Terminating the instances:%s", instance_ids)
+          
+                  # Wait for instances to terminate
+                  waiter = ec2_client.get_waiter('instance_terminated')
+                  waiter.wait(InstanceIds=instance_ids)
+          
+                  logger.info("All instances with tag %s:%s have been terminated", tag_key, tag_value)
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {"Message": "All instances terminated."})
+                  return
+
+              except Exception as error:
+                  logger.error(error, stack_info=True, exc_info=True)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {"Message": "Error occurred"})
+                  return
+      Runtime: python3.13
+      Handler: index.lambda_handler
+      Timeout: 300
+      Role: !GetAtt EC2CleanupFunctionRole.Arn
+  EC2CleanupFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: merlion-dev-ec2-terminate-lambda-role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ "lambda.amazonaws.com", "hooks.cloudformation.amazonaws.com" ]
+            Action: [ "sts:AssumeRole" ]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: merlion-dev-ec2-terminate-lambda-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ec2:TerminateInstances"
+                  - "ec2:DescribeInstances"
+                  - "cloudformation:SendResponseCFN"
+                  - "lambda:InvokeFunction"
+                Resource: [ "*" ]
+  # CloudFormation custom resource definition
+  EC2CreationCustomResource:
+    Type: Custom::EC2CreationResource
+    Properties:
+      ServiceToken: !GetAtt EC2CleanupFunction.Arn
+      InstanceId: !Ref Instance
