@@ -97,7 +97,18 @@ Resources:
             VolumeSize: 20
       #        - DeviceName: dev/xvdb
       #          VirtualName: ephemeral0
-      UserData: !Base64 echo hello world 1
+      UserData:
+        Fn::Base64:
+          !Sub |
+          #!/bin/bash -xe
+          echo '############## Starting to mount the volume. ##############'
+          mkdir -p /gocd/my-data
+          mount /dev/xvdh /gocd/my-data
+          df -h
+          cat /etc/fstab
+          echo '/dev/xvdh /gocd/my-data ext4 defaults,nofail 0 2' >> /etc/fstab
+          cat /etc/fstab
+          echo '############## Completion of mounting of volume. ##############'
       NetworkInterfaces:
         - AssociatePublicIpAddress: true
           DeleteOnTermination: true
