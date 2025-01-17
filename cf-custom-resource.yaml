@@ -1,11 +1,11 @@
 Parameters:
   EC2InstanceIdToBeTerminated:
     Description: Update this variable with the latest running instance when ever need to create new instance e.g. AMI Rollover, Instance type change etc.
-    Type: String
+    Type: AWS::EC2::Instance::Id
     Default: i-00d135b0f3f4de3da
   EC2InstanceAMI:
     Description: Instance AMI for the EC2 instance.
-    Type: String
+    Type:  AWS::EC2::Image::Id
     Default: ami-046d7944dd9e73a61
   EC2InstanceType:
     Description: Instance Type for the EC2 instance.
