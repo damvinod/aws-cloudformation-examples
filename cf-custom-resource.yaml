@@ -4,13 +4,17 @@ Parameters:
     Type: String
     Default: i-00d135b0f3f4de3da
   EC2InstanceAMI:
-    Description: Instance AMI
+    Description: Instance AMI for the EC2 instance.
     Type: String
     Default: ami-046d7944dd9e73a61
   EC2InstanceType:
-    Description: Instance Type
+    Description: Instance Type for the EC2 instance.
     Type: String
     Default: t3.nano
+  AvailabilityZone:
+    Description: Avaliability Zone in which the resources needs to be provisioned.
+    Type: String
+    Default: us-west-2a
 Resources:
   VPC:
     Type: AWS::EC2::VPC
@@ -23,7 +27,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: us-west-2a
+      AvailabilityZone: !Ref AvailabilityZone
       CidrBlock: 10.0.1.0/24
       Tags:
         - Key: Name
@@ -131,7 +135,7 @@ Resources:
   Volume:
     Type: AWS::EC2::Volume
     Properties:
-      AvailabilityZone: us-west-2a
+      AvailabilityZone: !Ref AvailabilityZone
       Size: 10
       VolumeType: gp3
       Tags:
