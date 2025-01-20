@@ -1,8 +1,3 @@
-Parameters:
-  AvailabilityZone:
-    Description: Availability Zone in which the resources needs to be provisioned.
-    Type: String
-    Default: us-west-2a
 Resources:
   VPC:
     Type: AWS::EC2::VPC
