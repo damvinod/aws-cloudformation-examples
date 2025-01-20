@@ -12,7 +12,7 @@ Parameters:
     Type: String
     Default: t3.nano
   AvailabilityZone:
-    Description: Avaliability Zone in which the resources needs to be provisioned.
+    Description: Availability Zone in which the resources needs to be provisioned.
     Type: String
     Default: us-west-2a
 Resources:
