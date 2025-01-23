@@ -98,8 +98,7 @@ Resources:
       #        - DeviceName: dev/xvdb
       #          VirtualName: ephemeral0
       UserData:
-        Fn::Base64:
-          !Sub |
+        Fn::Base64: |
           #!/bin/bash -xe
           echo '############## Starting to mount the volume. ##############'
           mkdir -p /gocd/my-data
