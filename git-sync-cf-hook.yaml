@@ -1,4 +1,4 @@
-template-file-path: ./cf-hooks.yaml
-
+template-file-path: git-sync-cf-hook.yaml
+parameters: {}
 tags:
-  team: 'merlion'
+  team: merlion
