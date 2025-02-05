@@ -1,4 +1,0 @@
-template-file-path: ./cf-hooks.yaml
-
-tags:
-  team: 'merlion'
